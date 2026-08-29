@@ -1,4 +1,4 @@
-name: Deploy portfolio to GitHub Pages
+name: Deploy portfolios to GitHub Pages
 
 on:
   push:
@@ -23,14 +23,51 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
+
+      - name: Prepare both portfolio sites
+        shell: bash
+        run: |
+          set -e
+          mkdir -p _site
+          rsync -a --exclude '.git' --exclude '.github' --exclude '_site' ./ _site/
+
+          VISUAL_URL='https://afnan-visual-ai-portfolio.stormy-hippo-7639.chatgpt.site/'
+          MIRROR_ROOT='/tmp/visual-ai-mirror'
+          HOST='afnan-visual-ai-portfolio.stormy-hippo-7639.chatgpt.site'
+
+          mkdir -p "$MIRROR_ROOT" _site/visual-ai
+
+          # Mirror the published Visual AI portfolio so GitHub Pages serves its own copy.
+          wget \
+            --mirror \
+            --page-requisites \
+            --convert-links \
+            --adjust-extension \
+            --no-parent \
+            --directory-prefix="$MIRROR_ROOT" \
+            "$VISUAL_URL" || true
+
+          if [ -d "$MIRROR_ROOT/$HOST" ]; then
+            cp -a "$MIRROR_ROOT/$HOST"/. _site/visual-ai/
+          fi
+
+          # Fallback: always make sure the route has an entry page.
+          if [ ! -f _site/visual-ai/index.html ]; then
+            curl -fL "$VISUAL_URL" -o _site/visual-ai/index.html
+          fi
+
+          touch _site/.nojekyll
+          test -s _site/index.html
+          test -s _site/visual-ai/index.html
+
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "."
+          path: "_site"
+
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
