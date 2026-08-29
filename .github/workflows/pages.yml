@@ -57,32 +57,75 @@ jobs:
             curl -fL "$VISUAL_URL" -o _site/visual-ai/index.html
           fi
 
-          # Fix paths for the nested GitHub Pages route.
           find _site/visual-ai -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -print0 | \
             xargs -0 sed -i \
               -e 's#/assets/#assets/#g' \
               -e 's#/portfolio/#portfolio/#g' \
               -e 's#/Afnan-Hassan-Portfolio.pdf#Afnan-Hassan-Portfolio.pdf#g'
 
-          # The mirrored app can fail to hydrate on static GitHub Pages. The full
-          # portfolio HTML is already server-rendered, so add a safe fallback that
-          # dismisses the loading screen and reveals the content if hydration does
-          # not complete on its own.
+          # Convert the mirrored app into a GitHub-safe static interactive page.
+          # The HTML already contains the full rendered portfolio, so remove the
+          # Vinext/React hydration scripts that can stall on GitHub Pages and use a
+          # tiny standalone script for scroll progress and reveal effects instead.
           python - <<'PY'
           from pathlib import Path
+          import re
+
           p = Path('_site/visual-ai/index.html')
           s = p.read_text(encoding='utf-8')
-          fallback = '''<script>(function(){setTimeout(function(){var l=document.querySelector('.loader');if(l&&!l.classList.contains('loaded')){l.classList.add('loaded');document.querySelectorAll('.reveal,.case-story,.skill-card').forEach(function(el){el.classList.add('in-view')});}},2200);})();</script>'''
-          if fallback not in s:
-              s = s.replace('</body>', fallback + '</body>')
+
+          # Remove all application/RSC scripts and module preload links.
+          s = re.sub(r'<script\b[^>]*>.*?</script>', '', s, flags=re.S | re.I)
+          s = re.sub(r'<link\b[^>]*rel=["\']modulepreload["\'][^>]*>', '', s, flags=re.I)
+
+          # Never let the loading overlay block the static page.
+          s = s.replace('</head>', '<style>.loader{display:none!important}</style></head>')
+
+          static_js = '''<script>
+          (function(){
+            function boot(){
+              var main=document.querySelector('main');
+              function update(){
+                if(!main) return;
+                var y=window.scrollY||0;
+                var max=Math.max(document.body.scrollHeight-window.innerHeight,1);
+                main.style.setProperty('--scroll',Math.min(y/850,1));
+                main.style.setProperty('--progress',Math.min(y/max,1));
+              }
+              update();
+              window.addEventListener('scroll',update,{passive:true});
+
+              var targets=document.querySelectorAll('.reveal,.case-story,.skill-card');
+              if('IntersectionObserver' in window){
+                var obs=new IntersectionObserver(function(entries){
+                  entries.forEach(function(entry){
+                    if(entry.isIntersecting) entry.target.classList.add('in-view');
+                  });
+                },{threshold:.12});
+                targets.forEach(function(el){obs.observe(el)});
+              } else {
+                targets.forEach(function(el){el.classList.add('in-view')});
+              }
+            }
+            if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
+            else boot();
+          })();
+          </script>'''
+
+          if '</body>' in s:
+              s = s.replace('</body>', static_js + '</body>', 1)
+          else:
+              s += static_js
+
           p.write_text(s, encoding='utf-8')
           PY
 
           touch _site/.nojekyll
           test -s _site/index.html
           test -s _site/visual-ai/index.html
-          test -s _site/visual-ai/assets/index-DZ8ipKAn.js
-          grep -q "setTimeout(function(){var l=document.querySelector('.loader')" _site/visual-ai/index.html
+          test -s _site/visual-ai/portfolio/case-marketing.png
+          grep -q '.loader{display:none!important}' _site/visual-ai/index.html
+          grep -q 'IntersectionObserver' _site/visual-ai/index.html
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
