@@ -40,7 +40,6 @@ jobs:
 
           mkdir -p "$MIRROR_ROOT" _site/visual-ai
 
-          # Mirror the published Visual AI portfolio so GitHub Pages serves its own copy.
           wget \
             --mirror \
             --page-requisites \
@@ -54,14 +53,24 @@ jobs:
             cp -a "$MIRROR_ROOT/$HOST"/. _site/visual-ai/
           fi
 
-          # Fallback: always make sure the route has an entry page.
           if [ ! -f _site/visual-ai/index.html ]; then
             curl -fL "$VISUAL_URL" -o _site/visual-ai/index.html
           fi
 
+          # The source app was built for the domain root. On GitHub Pages it lives
+          # under /visual-ai/, so convert root-relative runtime/resource paths to
+          # paths relative to that folder. This keeps JS hydration, images and the
+          # PDF working from the nested route.
+          find _site/visual-ai -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -print0 | \
+            xargs -0 sed -i \
+              -e 's#/assets/#assets/#g' \
+              -e 's#/portfolio/#portfolio/#g' \
+              -e 's#/Afnan-Hassan-Portfolio.pdf#Afnan-Hassan-Portfolio.pdf#g'
+
           touch _site/.nojekyll
           test -s _site/index.html
           test -s _site/visual-ai/index.html
+          test -s _site/visual-ai/assets/index-DZ8ipKAn.js
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
